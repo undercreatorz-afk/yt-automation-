@@ -1,0 +1,349 @@
+{
+  "name": "🎬 Motivation Shorts — Daily Auto Upload",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 1 * * *"
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234500001",
+      "name": "⏰ Schedule — 7AM IST Daily",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [100, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "assign-001",
+              "name": "theme",
+              "value": "={{ ['Rise & Grind', 'Resilience & Strength', 'Success Mindset', 'Overcoming Fear', 'Self Belief', 'Hard Work Pays Off', 'Unlock Your Potential'][new Date().getDay()] }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-002",
+              "name": "date",
+              "value": "={{ $now.format('YYYY-MM-DD') }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b2c3d4e5-f6a7-8901-bcde-f12345600002",
+      "name": "📅 Set Theme & Date",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [320, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $vars.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 800,\n  \"messages\": [{\n    \"role\": \"user\",\n    \"content\": \"You are a viral YouTube Shorts scriptwriter specializing in motivation. Create a 45-second motivational Short for today's theme: {{ $json.theme }}.\\n\\nRules:\\n1. Hook in the first 3 seconds — must stop the scroll instantly\\n2. Powerful punchy narration — MAX 90 words total\\n3. Emotionally charged — speak directly to the viewer\\n4. End with a strong call to action (like, subscribe, share)\\n5. Title: curiosity-triggering, 1 emoji, under 60 chars\\n6. Description: 2 punchy sentences + 10 hashtags (must include #Shorts #Motivation #MotivationalVideo)\\n7. Tags: 5 high-search-volume tags only\\n\\nReturn ONLY this exact JSON (no markdown, no backticks, no explanation):\\n{\\\"title\\\": \\\"...\\\", \\\"script\\\": \\\"...\\\", \\\"description\\\": \\\"...\\\", \\\"tags\\\": [\\\"...\\\",\\\"...\\\",\\\"...\\\",\\\"...\\\",\\\"...\\\"]}\"\n  }]\n}"
+      },
+      "id": "c3d4e5f6-a7b8-9012-cdef-012345700003",
+      "name": "🧠 Claude — Generate Script",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [540, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst rawText = data.content[0].text.trim();\n// Strip markdown code fences if Claude adds them\nconst cleaned = rawText\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/i, '')\n  .replace(/\\s*```$/i, '')\n  .trim();\ntry {\n  const parsed = JSON.parse(cleaned);\n  // Validate required fields\n  if (!parsed.title || !parsed.script || !parsed.description || !parsed.tags) {\n    throw new Error('Missing required fields in Claude response');\n  }\n  return [{ json: parsed }];\n} catch(e) {\n  throw new Error('JSON parse failed. Raw Claude output: ' + rawText);\n}"
+      },
+      "id": "d4e5f6a7-b8c9-0123-defa-123456800004",
+      "name": "📋 Parse Script JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [760, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.creatomate.com/v1/renders",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $vars.CREATOMATE_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={\n  \"template_id\": \"{{ $vars.SHORTS_TEMPLATE_ID }}\",\n  \"modifications\": [\n    {\n      \"name\": \"Narration\",\n      \"text\": {{ JSON.stringify($json.script) }}\n    },\n    {\n      \"name\": \"Headline\",\n      \"text\": {{ JSON.stringify($json.title) }}\n    }\n  ]\n}"
+      },
+      "id": "e5f6a7b8-c9d0-1234-efab-234567900005",
+      "name": "🎬 Creatomate — Start Render",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [980, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const renderData = $input.first().json;\n// Creatomate returns an array of renders\nconst renderId = Array.isArray(renderData) ? renderData[0].id : renderData.id;\nif (!renderId) throw new Error('No render ID returned from Creatomate. Response: ' + JSON.stringify(renderData));\nreturn [{ json: { render_id: renderId } }];"
+      },
+      "id": "f6a7b8c9-d0e1-2345-fabc-345678000006",
+      "name": "🔖 Extract Render ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 300]
+    },
+    {
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 3,
+        "unit": "minutes"
+      },
+      "id": "a7b8c9d0-e1f2-3456-abcd-456789100007",
+      "name": "⏳ Wait 3 Mins for Render",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1420, 300],
+      "webhookId": "shorts-wait-webhook"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.creatomate.com/v1/renders/{{ $('🔖 Extract Render ID').first().json.render_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $vars.CREATOMATE_API_KEY }}"
+            }
+          ]
+        }
+      },
+      "id": "b8c9d0e1-f2a3-4567-bcde-567890200008",
+      "name": "🔍 Poll Render Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1640, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-001",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "succeeded",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "c9d0e1f2-a3b4-5678-cdef-678900300009",
+      "name": "✅ Render Complete?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.1,
+      "position": [1860, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "id": "d0e1f2a3-b4c5-6789-defa-789000400010",
+      "name": "⬇️ Download Video File",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2080, 220]
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $('📋 Parse Script JSON').first().json.title }}",
+        "categoryId": "26",
+        "description": "={{ $('📋 Parse Script JSON').first().json.description }}",
+        "options": {
+          "privacyStatus": "public",
+          "tags": {
+            "tag": "={{ $('📋 Parse Script JSON').first().json.tags }}"
+          },
+          "selfDeclaredMadeForKids": false
+        }
+      },
+      "id": "e1f2a3b4-c5d6-7890-efab-890000500011",
+      "name": "📤 Upload to YouTube",
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [2300, 220],
+      "credentials": {
+        "youTubeOAuth2Api": {
+          "id": "REPLACE_WITH_YOUR_YT_CRED_ID",
+          "name": "YouTube account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $vars.SHEETS_DOC_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Shorts Log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $('📅 Set Theme & Date').first().json.date }}",
+            "Theme": "={{ $('📅 Set Theme & Date').first().json.theme }}",
+            "Title": "={{ $('📋 Parse Script JSON').first().json.title }}",
+            "YouTube ID": "={{ $json.id }}",
+            "YouTube URL": "=https://youtube.com/shorts/{{ $json.id }}",
+            "Status": "Uploaded"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "f2a3b4c5-d6e7-8901-fabc-900000600012",
+      "name": "📊 Log to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [2520, 220],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_YOUR_SHEETS_CRED_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "⏰ Schedule — 7AM IST Daily": {
+      "main": [
+        [{ "node": "📅 Set Theme & Date", "type": "main", "index": 0 }]
+      ]
+    },
+    "📅 Set Theme & Date": {
+      "main": [
+        [{ "node": "🧠 Claude — Generate Script", "type": "main", "index": 0 }]
+      ]
+    },
+    "🧠 Claude — Generate Script": {
+      "main": [
+        [{ "node": "📋 Parse Script JSON", "type": "main", "index": 0 }]
+      ]
+    },
+    "📋 Parse Script JSON": {
+      "main": [
+        [{ "node": "🎬 Creatomate — Start Render", "type": "main", "index": 0 }]
+      ]
+    },
+    "🎬 Creatomate — Start Render": {
+      "main": [
+        [{ "node": "🔖 Extract Render ID", "type": "main", "index": 0 }]
+      ]
+    },
+    "🔖 Extract Render ID": {
+      "main": [
+        [{ "node": "⏳ Wait 3 Mins for Render", "type": "main", "index": 0 }]
+      ]
+    },
+    "⏳ Wait 3 Mins for Render": {
+      "main": [
+        [{ "node": "🔍 Poll Render Status", "type": "main", "index": 0 }]
+      ]
+    },
+    "🔍 Poll Render Status": {
+      "main": [
+        [{ "node": "✅ Render Complete?", "type": "main", "index": 0 }]
+      ]
+    },
+    "✅ Render Complete?": {
+      "main": [
+        [{ "node": "⬇️ Download Video File", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "⬇️ Download Video File": {
+      "main": [
+        [{ "node": "📤 Upload to YouTube", "type": "main", "index": 0 }]
+      ]
+    },
+    "📤 Upload to YouTube": {
+      "main": [
+        [{ "node": "📊 Log to Sheets", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "motivation-shorts-automation"
+  },
+  "id": "motivation-shorts-v1",
+  "tags": [
+    { "id": "tag-yt-auto", "name": "YouTube Automation" },
+    { "id": "tag-motivation", "name": "Motivation" }
+  ]
+}
