@@ -1,0 +1,378 @@
+{
+  "name": "🎬 YouTube Shorts Full Automation",
+  "active": false,
+  "versionId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "id": "yt-shorts-automation-v1",
+  "tags": [],
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "yt-shorts-automation"
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            }
+          ]
+        }
+      },
+      "id": "node_1",
+      "name": "Daily Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300],
+      "notesInFlow": true,
+      "notes": "Runs every 24 hours. Change hoursInterval to post more or less often."
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://newsapi.org/v2/top-headlines",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "country", "value": "us" },
+            { "name": "pageSize", "value": "10" },
+            { "name": "apiKey", "value": "={{ $vars.NEWS_API_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node_2",
+      "name": "Fetch Trending News",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 300],
+      "notes": "Free tier at newsapi.org - 100 req/day. Set NEWS_API_KEY in n8n variables."
+    },
+    {
+      "parameters": {
+        "jsCode": "const articles = $input.first().json.articles;\nconst top = articles[Math.floor(Math.random() * Math.min(5, articles.length))];\nif (!top) throw new Error('No articles found');\nreturn [{ json: { topic: top.title, description: top.description || '', source: top.source?.name || 'News', url: top.url || '' } }];"
+      },
+      "id": "node_3",
+      "name": "Pick Topic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $vars.ANTHROPIC_API_KEY }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1000,\n  \"messages\": [{\n    \"role\": \"user\",\n    \"content\": \"You are a viral YouTube Shorts scriptwriter. Create a script about: {{ $json.topic }}\\n\\nRules:\\n- Hook must be shocking or curiosity-inducing (first 3 seconds)\\n- Script must be 45-60 seconds when spoken aloud\\n- Use simple, punchy sentences\\n- End with a call to action to follow the channel\\n\\nRespond with ONLY a raw JSON object, no markdown, no backticks:\\n{\\n  \\\"title\\\": \\\"catchy title under 60 chars\\\",\\n  \\\"hook\\\": \\\"first 3 seconds line only\\\",\\n  \\\"script\\\": \\\"full script for voiceover\\\",\\n  \\\"description\\\": \\\"YouTube description with 5 hashtags\\\",\\n  \\\"tags\\\": [\\\"tag1\\\",\\\"tag2\\\",\\\"tag3\\\",\\\"tag4\\\",\\\"tag5\\\",\\\"tag6\\\",\\\"tag7\\\",\\\"tag8\\\",\\\"tag9\\\",\\\"tag10\\\"],\\n  \\\"searchQuery\\\": \\\"2-3 word phrase for background footage\\\"\\n}\"\n  }]\n}",
+        "options": {}
+      },
+      "id": "node_4",
+      "name": "Claude - Write Script",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 300],
+      "notes": "Set ANTHROPIC_API_KEY in n8n variables. Get at console.anthropic.com"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json.content[0].text.trim();\nlet parsed;\ntry {\n  parsed = JSON.parse(raw);\n} catch (e) {\n  const match = raw.match(/```(?:json)?\\s*([\\s\\S]*?)```/);\n  if (match) { parsed = JSON.parse(match[1].trim()); }\n  else { const m2 = raw.match(/\\{[\\s\\S]*\\}/); parsed = JSON.parse(m2[0]); }\n}\nif (!parsed.title || !parsed.script) throw new Error('Invalid script from Claude');\nreturn [{ json: parsed }];"
+      },
+      "id": "node_5",
+      "name": "Parse Script",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "xi-api-key", "value": "={{ $vars.ELEVENLABS_API_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": \"{{ $json.hook }}. {{ $json.script }}\",\n  \"model_id\": \"eleven_turbo_v2\",\n  \"voice_settings\": {\n    \"stability\": 0.45,\n    \"similarity_boost\": 0.80,\n    \"style\": 0.35,\n    \"use_speaker_boost\": true\n  }\n}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "audio"
+            }
+          }
+        }
+      },
+      "id": "node_6",
+      "name": "ElevenLabs - Voiceover",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 300],
+      "notes": "Voice ID 21m00Tcm4TlvDq8ikWAM = Rachel. Get ELEVENLABS_API_KEY at elevenlabs.io"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.cloudinary.com/v1_1/{{ $vars.CLOUDINARY_CLOUD_NAME }}/auto/upload",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "file", "value": "={{ $binary.audio.data }}", "parameterType": "formBinaryData" },
+            { "name": "upload_preset", "value": "={{ $vars.CLOUDINARY_UPLOAD_PRESET }}" },
+            { "name": "resource_type", "value": "video" },
+            { "name": "folder", "value": "yt-shorts-audio" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node_7",
+      "name": "Upload Audio - Cloudinary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 300],
+      "notes": "Free 25GB at cloudinary.com. Set CLOUDINARY_CLOUD_NAME and CLOUDINARY_UPLOAD_PRESET."
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.pexels.com/videos/search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "={{ $vars.PEXELS_API_KEY }}" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "query", "value": "={{ $('Parse Script').item.json.searchQuery }}" },
+            { "name": "orientation", "value": "portrait" },
+            { "name": "per_page", "value": "6" },
+            { "name": "min_duration", "value": "8" },
+            { "name": "size", "value": "medium" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node_8",
+      "name": "Pexels - Get B-Roll",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 300],
+      "notes": "100% free. Get PEXELS_API_KEY at pexels.com/api/"
+    },
+    {
+      "parameters": {
+        "jsCode": "const scriptData = $('Parse Script').item.json;\nconst audioUrl = $('Upload Audio - Cloudinary').item.json.secure_url;\nconst videos = $input.first().json.videos || [];\nif (!audioUrl) throw new Error('Audio upload failed');\nif (videos.length === 0) throw new Error('No Pexels videos found');\nconst getUrl = (v) => { const hd = v?.video_files?.find(f => f.quality === 'hd' && f.width <= 1080); return hd?.link || v?.video_files?.[0]?.link || null; };\nconst clips = videos.map(v => getUrl(v)).filter(Boolean).slice(0, 3);\nwhile (clips.length < 3) clips.push(clips[0]);\nreturn [{ json: { title: scriptData.title, script: scriptData.script, hook: scriptData.hook, description: scriptData.description, tags: scriptData.tags, audioUrl, videoClip1: clips[0], videoClip2: clips[1], videoClip3: clips[2] } }];"
+      },
+      "id": "node_9",
+      "name": "Combine All Assets",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1760, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.creatomate.com/v1/renders",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $vars.CREATOMATE_API_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"template_id\": \"{{ $vars.CREATOMATE_TEMPLATE_ID }}\",\n  \"modifications\": {\n    \"video-clip-1\": \"{{ $json.videoClip1 }}\",\n    \"video-clip-2\": \"{{ $json.videoClip2 }}\",\n    \"video-clip-3\": \"{{ $json.videoClip3 }}\",\n    \"voiceover-audio\": \"{{ $json.audioUrl }}\",\n    \"hook-text\": \"{{ $json.hook }}\",\n    \"title-text\": \"{{ $json.title }}\"\n  }\n}",
+        "options": {}
+      },
+      "id": "node_10",
+      "name": "Creatomate - Render Video",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1980, 300],
+      "notes": "Free trial = 10 renders. Get CREATOMATE_API_KEY at creatomate.com. Set CREATOMATE_TEMPLATE_ID after uploading your template."
+    },
+    {
+      "parameters": {
+        "unit": "seconds",
+        "amount": 90
+      },
+      "id": "node_11",
+      "name": "Wait 90s for Render",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [2200, 300],
+      "webhookId": "wait-render-complete"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.creatomate.com/v1/renders/{{ $('Creatomate - Render Video').item.json[0].id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $vars.CREATOMATE_API_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node_12",
+      "name": "Get Render URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2420, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "video"
+            }
+          }
+        }
+      },
+      "id": "node_13",
+      "name": "Download Video",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2640, 300]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "title": "={{ $('Parse Script').item.json.title }}",
+        "description": "={{ $('Parse Script').item.json.description }}",
+        "categoryId": "22",
+        "options": {
+          "tags": "={{ $('Parse Script').item.json.tags.join(',') }}",
+          "privacyStatus": "public",
+          "madeForKids": false
+        }
+      },
+      "id": "node_14",
+      "name": "Upload to YouTube",
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [2860, 300],
+      "credentials": {
+        "youTubeOAuth2Api": {
+          "id": "youtube-oauth",
+          "name": "YouTube OAuth2 API"
+        }
+      },
+      "notes": "Connect YouTube via OAuth2 in n8n Credentials menu."
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $vars.GOOGLE_SHEET_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Shorts Log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ new Date().toLocaleDateString() }}",
+            "Time": "={{ new Date().toLocaleTimeString() }}",
+            "Title": "={{ $('Parse Script').item.json.title }}",
+            "Hook": "={{ $('Parse Script').item.json.hook }}",
+            "YouTube ID": "={{ $json.id }}",
+            "YouTube URL": "=https://youtube.com/shorts/{{ $json.id }}",
+            "Status": "Published"
+          }
+        },
+        "options": {}
+      },
+      "id": "node_15",
+      "name": "Log to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [3080, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-oauth",
+          "name": "Google Sheets OAuth2"
+        }
+      },
+      "notes": "Set GOOGLE_SHEET_ID in n8n variables. Create a sheet tab called Shorts Log."
+    }
+  ],
+  "connections": {
+    "Daily Trigger": {
+      "main": [[{ "node": "Fetch Trending News", "type": "main", "index": 0 }]]
+    },
+    "Fetch Trending News": {
+      "main": [[{ "node": "Pick Topic", "type": "main", "index": 0 }]]
+    },
+    "Pick Topic": {
+      "main": [[{ "node": "Claude - Write Script", "type": "main", "index": 0 }]]
+    },
+    "Claude - Write Script": {
+      "main": [[{ "node": "Parse Script", "type": "main", "index": 0 }]]
+    },
+    "Parse Script": {
+      "main": [[{ "node": "ElevenLabs - Voiceover", "type": "main", "index": 0 }]]
+    },
+    "ElevenLabs - Voiceover": {
+      "main": [[{ "node": "Upload Audio - Cloudinary", "type": "main", "index": 0 }]]
+    },
+    "Upload Audio - Cloudinary": {
+      "main": [[{ "node": "Pexels - Get B-Roll", "type": "main", "index": 0 }]]
+    },
+    "Pexels - Get B-Roll": {
+      "main": [[{ "node": "Combine All Assets", "type": "main", "index": 0 }]]
+    },
+    "Combine All Assets": {
+      "main": [[{ "node": "Creatomate - Render Video", "type": "main", "index": 0 }]]
+    },
+    "Creatomate - Render Video": {
+      "main": [[{ "node": "Wait 90s for Render", "type": "main", "index": 0 }]]
+    },
+    "Wait 90s for Render": {
+      "main": [[{ "node": "Get Render URL", "type": "main", "index": 0 }]]
+    },
+    "Get Render URL": {
+      "main": [[{ "node": "Download Video", "type": "main", "index": 0 }]]
+    },
+    "Download Video": {
+      "main": [[{ "node": "Upload to YouTube", "type": "main", "index": 0 }]]
+    },
+    "Upload to YouTube": {
+      "main": [[{ "node": "Log to Google Sheets", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "pinData": {}
+}
