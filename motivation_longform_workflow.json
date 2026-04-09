@@ -1,0 +1,356 @@
+{
+  "name": "🎥 Motivation Long-Form — Daily Auto Upload",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 12 * * *"
+            }
+          ]
+        }
+      },
+      "id": "aa1b2c3d-e5f6-7890-abcd-ef1234500001",
+      "name": "⏰ Schedule — 6PM IST / 8AM EST",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [100, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "assign-lf-001",
+              "name": "theme",
+              "value": "={{ ['The Morning Ritual That Changes Everything', 'Why Most People Never Achieve Their Dreams', 'The Hidden Power of Self Discipline', 'How to Rewire Your Mind for Success', 'Stop Playing Small — Your Potential Is Limitless', 'The Mindset Shift That Separates Winners From Losers', 'You Are One Decision Away From a Different Life'][new Date().getDay()] }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-lf-002",
+              "name": "date",
+              "value": "={{ $now.format('YYYY-MM-DD') }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-lf-003",
+              "name": "episode_num",
+              "value": "={{ Math.floor((new Date() - new Date('2025-01-01')) / (1000*60*60*24)) + 1 }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "bb2c3d4e-f6a7-8901-bcde-f12345600002",
+      "name": "📅 Set Theme & Date",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [320, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $vars.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 2000,\n  \"messages\": [{\n    \"role\": \"user\",\n    \"content\": \"You are a world-class motivational YouTube scriptwriter (think Motiversity, Absolute Motivation style). Write a powerful 7-10 minute narration script on the theme: {{ $json.theme }}.\\n\\nScript Structure (strictly follow this):\\n- HOOK (30 sec): Dramatic opening statement that stops the viewer cold\\n- INTRO (1 min): Set the emotional stakes. Why does this matter?\\n- SECTION 1 (2 min): Core message — first big idea\\n- SECTION 2 (2 min): Deeper insight — second big idea with a real-world example\\n- SECTION 3 (2 min): The transformation — how to apply this to your life\\n- CLOSING (30 sec): Powerful summary + call to action (like, subscribe, share)\\n\\nTone: Cinematic, intense, deeply personal. Use 'you' to address the viewer directly. Include at least one powerful quote.\\nTarget length: ~900-1100 words of narration.\\n\\nAlso create:\\n- Title: Emotionally powerful, curiosity-triggering, 1 emoji, under 70 chars\\n- Description: 3 compelling sentences about the video + timestamps + 12 hashtags including #Motivation #Mindset #Success\\n- Tags: 8 high-search-volume tags\\n\\nReturn ONLY this exact JSON (no markdown, no backticks, no explanation):\\n{\\\"title\\\": \\\"...\\\", \\\"script\\\": \\\"...\\\", \\\"description\\\": \\\"...\\\", \\\"tags\\\": [\\\"...\\\",\\\"...\\\",\\\"...\\\",\\\"...\\\",\\\"...\\\",\\\"...\\\",\\\"...\\\",\\\"...\\\"]}\"\n  }]\n}"
+      },
+      "id": "cc3d4e5f-a7b8-9012-cdef-012345700003",
+      "name": "🧠 Claude — Generate Script",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [540, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst rawText = data.content[0].text.trim();\n// Strip markdown code fences if Claude adds them\nconst cleaned = rawText\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/i, '')\n  .replace(/\\s*```$/i, '')\n  .trim();\ntry {\n  const parsed = JSON.parse(cleaned);\n  // Validate required fields\n  if (!parsed.title || !parsed.script || !parsed.description || !parsed.tags) {\n    throw new Error('Missing required fields in Claude response');\n  }\n  // Word count check\n  const wordCount = parsed.script.split(/\\s+/).length;\n  console.log(`Script word count: ${wordCount}`);\n  return [{ json: { ...parsed, word_count: wordCount } }];\n} catch(e) {\n  throw new Error('JSON parse failed. Raw output: ' + rawText.substring(0, 300));\n}"
+      },
+      "id": "dd4e5f6a-b8c9-0123-defa-123456800004",
+      "name": "📋 Parse Script JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [760, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.creatomate.com/v1/renders",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $vars.CREATOMATE_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={\n  \"template_id\": \"{{ $vars.LONGFORM_TEMPLATE_ID }}\",\n  \"modifications\": [\n    {\n      \"name\": \"Narration\",\n      \"text\": {{ JSON.stringify($json.script) }}\n    },\n    {\n      \"name\": \"Title\",\n      \"text\": {{ JSON.stringify($json.title) }}\n    }\n  ]\n}"
+      },
+      "id": "ee5f6a7b-c9d0-1234-efab-234567900005",
+      "name": "🎬 Creatomate — Start Render",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [980, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const renderData = $input.first().json;\nconst renderId = Array.isArray(renderData) ? renderData[0].id : renderData.id;\nif (!renderId) throw new Error('No render ID from Creatomate: ' + JSON.stringify(renderData));\nconsole.log('Render started, ID: ' + renderId);\nreturn [{ json: { render_id: renderId } }];"
+      },
+      "id": "ff6a7b8c-d0e1-2345-fabc-345678000006",
+      "name": "🔖 Extract Render ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 300]
+    },
+    {
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 8,
+        "unit": "minutes"
+      },
+      "id": "aa7b8c9d-e1f2-3456-abcd-456789100007",
+      "name": "⏳ Wait 8 Mins for Render",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1420, 300],
+      "webhookId": "longform-wait-webhook"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.creatomate.com/v1/renders/{{ $('🔖 Extract Render ID').first().json.render_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $vars.CREATOMATE_API_KEY }}"
+            }
+          ]
+        }
+      },
+      "id": "bb8c9d0e-f2a3-4567-bcde-567890200008",
+      "name": "🔍 Poll Render Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1640, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-lf-001",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "succeeded",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "cc9d0e1f-a3b4-5678-cdef-678900300009",
+      "name": "✅ Render Complete?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.1,
+      "position": [1860, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "id": "dd0e1f2a-b4c5-6789-defa-789000400010",
+      "name": "⬇️ Download Video File",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2080, 220]
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $('📋 Parse Script JSON').first().json.title }}",
+        "categoryId": "26",
+        "description": "={{ $('📋 Parse Script JSON').first().json.description }}",
+        "options": {
+          "privacyStatus": "public",
+          "tags": {
+            "tag": "={{ $('📋 Parse Script JSON').first().json.tags }}"
+          },
+          "selfDeclaredMadeForKids": false
+        }
+      },
+      "id": "ee1f2a3b-c5d6-7890-efab-890000500011",
+      "name": "📤 Upload to YouTube",
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [2300, 220],
+      "credentials": {
+        "youTubeOAuth2Api": {
+          "id": "REPLACE_WITH_YOUR_YT_CRED_ID",
+          "name": "YouTube account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $vars.SHEETS_DOC_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Long-Form Log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $('📅 Set Theme & Date').first().json.date }}",
+            "Theme": "={{ $('📅 Set Theme & Date').first().json.theme }}",
+            "Title": "={{ $('📋 Parse Script JSON').first().json.title }}",
+            "Word Count": "={{ $('📋 Parse Script JSON').first().json.word_count }}",
+            "YouTube ID": "={{ $json.id }}",
+            "YouTube URL": "=https://www.youtube.com/watch?v={{ $json.id }}",
+            "Status": "Uploaded"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "ff2a3b4c-d6e7-8901-fabc-900000600012",
+      "name": "📊 Log to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [2520, 220],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_YOUR_SHEETS_CRED_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "⏰ Schedule — 6PM IST / 8AM EST": {
+      "main": [
+        [{ "node": "📅 Set Theme & Date", "type": "main", "index": 0 }]
+      ]
+    },
+    "📅 Set Theme & Date": {
+      "main": [
+        [{ "node": "🧠 Claude — Generate Script", "type": "main", "index": 0 }]
+      ]
+    },
+    "🧠 Claude — Generate Script": {
+      "main": [
+        [{ "node": "📋 Parse Script JSON", "type": "main", "index": 0 }]
+      ]
+    },
+    "📋 Parse Script JSON": {
+      "main": [
+        [{ "node": "🎬 Creatomate — Start Render", "type": "main", "index": 0 }]
+      ]
+    },
+    "🎬 Creatomate — Start Render": {
+      "main": [
+        [{ "node": "🔖 Extract Render ID", "type": "main", "index": 0 }]
+      ]
+    },
+    "🔖 Extract Render ID": {
+      "main": [
+        [{ "node": "⏳ Wait 8 Mins for Render", "type": "main", "index": 0 }]
+      ]
+    },
+    "⏳ Wait 8 Mins for Render": {
+      "main": [
+        [{ "node": "🔍 Poll Render Status", "type": "main", "index": 0 }]
+      ]
+    },
+    "🔍 Poll Render Status": {
+      "main": [
+        [{ "node": "✅ Render Complete?", "type": "main", "index": 0 }]
+      ]
+    },
+    "✅ Render Complete?": {
+      "main": [
+        [{ "node": "⬇️ Download Video File", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "⬇️ Download Video File": {
+      "main": [
+        [{ "node": "📤 Upload to YouTube", "type": "main", "index": 0 }]
+      ]
+    },
+    "📤 Upload to YouTube": {
+      "main": [
+        [{ "node": "📊 Log to Sheets", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "motivation-longform-automation"
+  },
+  "id": "motivation-longform-v1",
+  "tags": [
+    { "id": "tag-yt-auto", "name": "YouTube Automation" },
+    { "id": "tag-motivation", "name": "Motivation" }
+  ]
+}
