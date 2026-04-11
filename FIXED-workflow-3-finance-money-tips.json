@@ -14,7 +14,7 @@
         "rule": { "interval": [{ "field": "hours", "hoursInterval": 8 }] }
       },
       "id": "fin_1",
-      "name": "Every 8 Hours 3x Daily",
+      "name": "Every 12 Hours 2x Daily",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [0, 300],
